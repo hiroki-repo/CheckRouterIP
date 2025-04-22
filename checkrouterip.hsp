@@ -1,0 +1,49 @@
+#packopt name "checkrouterip"
+#runtime "hsp3cl"
+#uselib "Iphlpapi.dll"
+#cfunc IcmpCreateFile "IcmpCreateFile"
+#cfunc IcmpSendEcho "IcmpSendEcho" int,int,int,int,int,int,int,int
+#func IcmpCloseHandle "IcmpCloseHandle" int
+
+dim ipoption,2
+sdim receivedata,1024
+data4send="Data Buffer"
+ipaddrstr=""+dir_cmdline:repeat:if strmid(ipaddrstr,0,1)=" "{ipaddrstr=strmid(ipaddrstr,1,strlen(ipaddrstr))}else{break}:loop
+sdim ipaddrstrx,64,4
+split ipaddrstr,".",ipaddrstrx
+poke ipaddrs,0,int(ipaddrstrx(0))
+poke ipaddrs,1,int(ipaddrstrx(1))
+poke ipaddrs,2,int(ipaddrstrx(2))
+poke ipaddrs,3,int(ipaddrstrx(3))
+sameipaddr=0:icmpresultzc=0:previousip=0:previousip2=ipaddrs:prevunpinged=0:unpinged=0
+icmphndl=IcmpCreateFile()
+repeat 32
+ipoption(0)=0
+ipoption(1)=0
+poke ipoption,0,cnt+1
+poke ipoption,3,0
+repeat 2
+icmpresult=IcmpSendEcho(icmphndl,ipaddrs,varptr(data4send),varsize(data4send),varptr(ipoption),varptr(receivedata),varsize(receivedata),3500)
+if lpeek(receivedata,0)!=0{break}
+loop
+if (icmpresult=0 & icmpresultzc=32) | (sameipaddr=1 & lpeek(receivedata,0)=lpeek(ipaddrs,0)){break}
+if previousip!=0{previousip2=previousip}
+if previousip=lpeek(receivedata,0) & (lpeek(receivedata,4)=11002 | lpeek(receivedata,4)=11003) & icmpresult!=0{mes "[Unassigned IP address]":break}
+previousip=0
+if lpeek(receivedata,0)=lpeek(ipaddrs,0){sameipaddr=1}
+if (icmpresult=0){icmpresultzc++}else{icmpresultzc=0}
+if sameipaddr=0{prevunpinged=unpinged}
+if (icmpresult!=0){
+mes str(peek(receivedata,0))+"."+str(peek(receivedata,1))+"."+str(peek(receivedata,2))+"."+str(peek(receivedata,3))
+unpinged=0
+}else{
+mes "*"
+unpinged=1
+}
+previousip=lpeek(receivedata,0)
+await
+loop
+IcmpCloseHandle icmphndl
+if unpinged=0 & prevunpinged=1{previousip2=0}
+mes "Router:"+str(peek(previousip2,0))+"."+str(peek(previousip2,1))+"."+str(peek(previousip2,2))+"."+str(peek(previousip2,3))
+end

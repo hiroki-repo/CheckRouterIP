@@ -1,0 +1,99 @@
+#packopt name "checkrouteripv6"
+#runtime "hsp3cl"
+#uselib "Iphlpapi.dll"
+#cfunc Icmp6CreateFile "Icmp6CreateFile"
+#cfunc Icmp6SendEcho2 "Icmp6SendEcho2" int,int,int,int,int,int,int,int,int,int,int,int
+#func IcmpCloseHandle "IcmpCloseHandle" int
+
+#module
+#defcfunc getipv6str var prm_0
+ipv6zerocount=0,0,0,0,0,0,0,0,0:ipv6zerocountxyz=0,0,0,0,0,0,0,0,0:ipv6zerocountx=0:ipv6zerocountxst=0:ipv6cutx=0:ipv6cutxtmp=-1:ipv6cutx=8
+repeat 8:if wpeek(prm_0,0+(cnt*2))=0{ipv6zerocountxst=1}:if ipv6zerocountxst=1{if wpeek(prm_0,0+(cnt*2))=0{if ipv6zerocount(ipv6zerocountx)=0{ipv6zerocountxyz(ipv6zerocountx)=cnt}:ipv6zerocount(ipv6zerocountx)++}else{ipv6zerocountx++}}:loop
+repeat 8
+ipv6cutxtmp2=ipv6zerocount(cnt)
+repeat 8:if ipv6zerocount(cnt)>ipv6cutxtmp & ipv6zerocount(cnt)>ipv6cutxtmp2{ipv6cutxtmp=ipv6zerocount(cnt):ipv6cutx=cnt}:loop
+loop
+ipv6str="":repeat 8:if ipv6zerocountxyz(ipv6cutx)<=cnt && cnt<(ipv6zerocountxyz(ipv6cutx)+ipv6zerocount(ipv6cutx)) && ipv6cutx!=8{if ipv6zerocountxyz(ipv6cutx)=cnt{ipv6str+=":"}}else{if peek(prm_0,0+(cnt*2))!=0{ipv6str+=strf("%x",peek(prm_0,0+(cnt*2)))}:if peek(prm_0,0+(cnt*2))=0{ipv6str+=strf("%x",peek(prm_0,1+(cnt*2)))}else{ipv6str+=strf("%02x",peek(prm_0,1+(cnt*2)))}:if cnt!=7{ipv6str+=":"}}:loop
+return ipv6str
+#global
+
+myipaddrs=0,0,0,0,0,0,0,0
+ipaddrs=0,0,0,0,0,0,0,0
+dim ipoption,2
+sdim receivedata,1024
+data4send="Data Buffer"
+ipaddrstr=""+dir_cmdline:repeat:if strmid(ipaddrstr,0,1)=" "{ipaddrstr=strmid(ipaddrstr,1,strlen(ipaddrstr))}else{break}:loop
+sdim ipaddrstrx,64,4
+split ipaddrstr,"::",ipaddrstr2
+split ipaddrstr2(0),":",ipaddrstrx1
+split ipaddrstr2(1),":",ipaddrstrx2
+sdim ipaddrstrx,64,8
+ipv6sx=0
+if ipv6sx<8{
+if ipaddrstr2(0)!=""{
+repeat length(ipaddrstrx1)
+ipaddrstrx(ipv6sx)=""
+repeat 4-strlen(ipaddrstrx1(cnt)):ipaddrstrx(ipv6sx)+="0":loop
+ipaddrstrx(ipv6sx)+=ipaddrstrx1(cnt)
+ipv6sx++
+loop
+}
+}
+if ipv6sx<8{
+repeat (8-(length(ipaddrstrx1)+length(ipaddrstrx2)))
+ipaddrstrx(ipv6sx)="0000"
+ipv6sx++
+loop
+}
+if ipv6sx<8{
+if ipaddrstr2(1)!=""{
+repeat length(ipaddrstrx2)
+ipaddrstrx(ipv6sx)=""
+repeat 4-strlen(ipaddrstrx2(cnt)):ipaddrstrx(ipv6sx)+="0":loop
+ipaddrstrx(ipv6sx)+=ipaddrstrx2(cnt)
+ipv6sx++
+loop
+}
+}
+wpoke myipaddrs,0,23
+wpoke ipaddrs,0,23
+repeat 8
+poke ipaddrs,8+0+(2*cnt),int("$"+strmid(ipaddrstrx(cnt),2*0,2))
+poke ipaddrs,8+1+(2*cnt),int("$"+strmid(ipaddrstrx(cnt),2*1,2))
+loop
+//stop
+sameipaddr=0:icmpresultzc=0:previousip=0,0,0,0:previousip2=lpeek(ipaddrs,8+0),lpeek(ipaddrs,8+4),lpeek(ipaddrs,8+8),lpeek(ipaddrs,8+12):prevunpinged=0:unpinged=0
+icmphndl=Icmp6CreateFile()
+repeat 32
+ipoption(0)=0
+ipoption(1)=0
+poke ipoption,0,cnt+1
+poke ipoption,3,0
+repeat 2
+icmpresult=Icmp6SendEcho2(icmphndl,0,0,0,varptr(myipaddrs),varptr(ipaddrs),varptr(data4send),varsize(data4send),varptr(ipoption),varptr(receivedata),varsize(receivedata),3500)
+if lpeek(receivedata,6+(4*0))!=0 | lpeek(receivedata,6+(4*1))!=0 | lpeek(receivedata,6+(4*2))!=0 | lpeek(receivedata,6+(4*3))!=0{break}
+loop
+if (icmpresult=0 & icmpresultzc=32) | (sameipaddr=1 & (lpeek(receivedata,6+0)=lpeek(ipaddrs,8+0) & lpeek(receivedata,6+4)=lpeek(ipaddrs,8+4) & lpeek(receivedata,6+8)=lpeek(ipaddrs,8+8) & lpeek(receivedata,6+12)=lpeek(ipaddrs,8+12))){break}
+if previousip(0)!=0 | previousip(1)!=0 | previousip(2)!=0 | previousip(3)!=0{repeat 4:previousip2(cnt)=previousip(cnt):loop}
+if (previousip(0)=lpeek(receivedata,6+0) & previousip(1)=lpeek(receivedata,6+4) & previousip(2)=lpeek(receivedata,6+8) & previousip(3)=lpeek(receivedata,6+12)) & (lpeek(receivedata,26)=11002 | lpeek(receivedata,26)=11003) & icmpresult!=0{mes "[Unassigned IP address]":break}
+previousip=0
+if (lpeek(receivedata,6+0)=lpeek(ipaddrs,8+0) & lpeek(receivedata,6+4)=lpeek(ipaddrs,8+4) & lpeek(receivedata,6+8)=lpeek(ipaddrs,8+8) & lpeek(receivedata,6+12)=lpeek(ipaddrs,8+12)){sameipaddr=1}
+if (icmpresult=0){icmpresultzc++}else{icmpresultzc=0}
+if sameipaddr=0{prevunpinged=unpinged}
+ipv6gotten=0,0,0,0
+memcpy ipv6gotten,receivedata,16,0,6
+if (icmpresult!=0){
+mes getipv6str(ipv6gotten)
+unpinged=0
+}else{
+mes "*"
+unpinged=1
+}
+previousip=lpeek(receivedata,6+0),lpeek(receivedata,6+4),lpeek(receivedata,6+8),lpeek(receivedata,6+12)
+await
+loop
+IcmpCloseHandle icmphndl
+if unpinged=0 & prevunpinged=1{previousip2=0,0,0,0}
+mes "Router:"+getipv6str(previousip2)
+//end
+stop
